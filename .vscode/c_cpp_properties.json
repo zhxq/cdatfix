@@ -1,0 +1,37 @@
+{
+    "configurations": [
+        {
+            "name": "driver",
+            "defines": [
+                "__KERNEL__",
+                "MODULE"
+            ],
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/eeum/linux-6.6.8/include",
+                "/home/eeum/linux-6.6.8/drivers",
+                "/home/eeum/linux-6.6.8/arch/x86/include",
+                "/home/eeum/linux-6.6.8/arch/x86/include/generated/",
+                "/home/eeum/linux-6.6.8/drivers/cxl",
+                "/home/eeum/linux-6.6.8/drivers/cxl/core"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "browse": {
+                "path": [
+                    "/home/eeum/linux-6.6.8/include",
+                    "/home/eeum/linux-6.6.8/drivers"
+                ]
+            },
+            "compilerArgs": [
+                "-nostdinc",
+                "-include", "/home/eeum/linux-6.6.8/include/linux/kconfig.h",
+                "-include", "/home/eeum/linux-6.6.8/include/linux/compiler_types.h"
+            ],
+            "comments": "Source from: https://github.com/microsoft/vscode-cpptools/issues/5588#issuecomment-662116156"
+        }
+    ],
+    "version": 4
+}

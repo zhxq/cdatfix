@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "kernel.h": "c",
+        "types.h": "c",
+        "ftrace.h": "c",
+        "fs.h": "c",
+        "delay.h": "c",
+        "io-64-nonatomic-lo-hi.h": "c",
+        "trace_recursion.h": "c",
+        "interrupt.h": "c",
+        "kallsyms.h": "c",
+        "sections.h": "c",
+        "sched.h": "c",
+        "cxlpci.h": "c",
+        "core.h": "c"
+    }
+}

@@ -15,8 +15,6 @@
 #include <linux/version.h>
 #include <linux/kprobes.h>
 #include <linux/blkdev.h>
-#include <linux/nvme_ioctl.h>
-#include <linux/nvme.h>
 #include <linux/moduleparam.h>
 #include <linux/hashtable.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
@@ -29,9 +27,17 @@
 #include <cxl.h>
 #include "core.h"
 #include "trace.h"
-#include "nvme.h"
 
 #define HASHTABLE_BITS 16
+
+// From drivers/cxl/core/pci.c
+#define CXL_DOE_TABLE_ACCESS_REQ_CODE		0x000000ff
+#define CXL_DOE_TABLE_ACCESS_REQ_CODE_READ	0
+#define CXL_DOE_TABLE_ACCESS_TABLE_TYPE		0x0000ff00
+#define CXL_DOE_TABLE_ACCESS_TABLE_TYPE_CDATA	0
+#define CXL_DOE_TABLE_ACCESS_ENTRY_HANDLE	0xffff0000
+#define CXL_DOE_TABLE_ACCESS_LAST_ENTRY		0xffff
+#define CXL_DOE_PROTOCOL_TABLE_ACCESS 2
 
 struct process_name {
 	char* pname;
@@ -54,19 +60,9 @@ struct process_name {
 	do { } while (0)
 #endif
 
-MODULE_DESCRIPTION("Block IO Stream ID Tagger");
+MODULE_DESCRIPTION("CDAT Fixer");
 MODULE_AUTHOR("Xiangqun Zhang <xzhang84@syr.edu>");
 MODULE_LICENSE("GPL");
-
-// Handle streams argument
-// Takes a list like "proc1,proc2;proc3"
-//   which will assign I/O from proc1 and proc2 to stream 2
-//   and proc3 to stream 3. Stream ID starts from 2 as defined by Linux kernel.
-static char* streams = NULL;
-static int arg_streams = 0;
-static int* arg_stream_processes;
-static char*** streamlist = NULL;
-DEFINE_HASHTABLE(requests, HASHTABLE_BITS);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)
 static unsigned long lookup_name(const char *name)
@@ -281,6 +277,28 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count)
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 
+
+static asmlinkage int (*real_cxl_cdat_get_length)(struct device *dev,
+			       struct pci_doe_mb *cdat_doe,
+			       size_t *length);
+
+static asmlinkage int fh_cxl_cdat_get_length(struct device *dev,
+			       struct pci_doe_mb *cdat_doe,
+			       size_t *length){
+	return real_cxl_cdat_get_length(dev, cdat_doe, length);
+}
+
+
+static asmlinkage int (*real_cxl_cdat_read_table)(struct device *dev,
+			       struct pci_doe_mb *cdat_doe,
+			       void *cdat_table, size_t *cdat_length);
+
+static asmlinkage int fh_cxl_cdat_read_table(struct device *dev,
+			       struct pci_doe_mb *cdat_doe,
+			       void *cdat_table, size_t *cdat_length){
+	return real_cxl_cdat_read_table(dev, cdat_doe, cdat_table, cdat_length);
+}
+
 static asmlinkage void (*real_read_cdat_data)(struct cxl_port *port);
 
 static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
@@ -294,7 +312,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 	// printwmodname("blk_account_io_start() after\n\n");
 
 
-	struct cxl_memdev *cxlmd = to_cxl_memdev(port->uport_dev);
+		struct cxl_memdev *cxlmd = to_cxl_memdev(port->uport_dev);
 	struct device *host = cxlmd->dev.parent;
 	struct device *dev = &port->dev;
 	struct pci_doe_mb *cdat_doe;
@@ -314,7 +332,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 
 	port->cdat_available = true;
 
-	if (cxl_cdat_get_length(dev, cdat_doe, &cdat_length)) {
+	if (fh_cxl_cdat_get_length(dev, cdat_doe, &cdat_length)) {
 		dev_dbg(dev, "No CDAT length\n");
 		return;
 	}
@@ -324,7 +342,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 	if (!cdat_table)
 		return;
 
-	rc = cxl_cdat_read_table(dev, cdat_doe, cdat_table, &cdat_length);
+	rc = fh_cxl_cdat_read_table(dev, cdat_doe, cdat_table, &cdat_length);
 	if (rc) {
 		/* Don't leave table data allocated on error */
 		devm_kfree(dev, cdat_table);
@@ -347,6 +365,8 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 
 static struct ftrace_hook demo_hooks[] = {
 	HOOK("read_cdat_data",  fh_read_cdat_data,  &real_read_cdat_data),
+	HOOK("cxl_cdat_get_length",  fh_cxl_cdat_get_length,  &real_cxl_cdat_get_length),
+	HOOK("cxl_cdat_read_table",  fh_cxl_cdat_read_table,  &real_cxl_cdat_read_table),
 };
 
 static int fh_init(void)
