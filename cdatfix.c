@@ -28,6 +28,8 @@
 #include "core.h"
 #include "trace.h"
 
+MODULE_IMPORT_NS(CXL);
+
 #define HASHTABLE_BITS 16
 
 // From drivers/cxl/core/pci.c
@@ -38,6 +40,14 @@
 #define CXL_DOE_TABLE_ACCESS_ENTRY_HANDLE	0xffff0000
 #define CXL_DOE_TABLE_ACCESS_LAST_ENTRY		0xffff
 #define CXL_DOE_PROTOCOL_TABLE_ACCESS 2
+
+#define CDAT_DOE_REQ(entry_handle) cpu_to_le32				\
+	(FIELD_PREP(CXL_DOE_TABLE_ACCESS_REQ_CODE,			\
+		    CXL_DOE_TABLE_ACCESS_REQ_CODE_READ) |		\
+	 FIELD_PREP(CXL_DOE_TABLE_ACCESS_TABLE_TYPE,			\
+		    CXL_DOE_TABLE_ACCESS_TABLE_TYPE_CDATA) |		\
+	 FIELD_PREP(CXL_DOE_TABLE_ACCESS_ENTRY_HANDLE, (entry_handle)))
+
 
 struct process_name {
 	char* pname;
@@ -277,27 +287,86 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count)
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 
-
-static asmlinkage int (*real_cxl_cdat_get_length)(struct device *dev,
+static int cxl_cdat_get_length(struct device *dev,
 			       struct pci_doe_mb *cdat_doe,
-			       size_t *length);
+			       size_t *length)
+{
+	__le32 request = CDAT_DOE_REQ(0);
+	__le32 response[2];
+	int rc;
 
-static asmlinkage int fh_cxl_cdat_get_length(struct device *dev,
-			       struct pci_doe_mb *cdat_doe,
-			       size_t *length){
-	return real_cxl_cdat_get_length(dev, cdat_doe, length);
+	rc = pci_doe(cdat_doe, PCI_DVSEC_VENDOR_ID_CXL,
+		     CXL_DOE_PROTOCOL_TABLE_ACCESS,
+		     &request, sizeof(request),
+		     &response, sizeof(response));
+	if (rc < 0) {
+		dev_err(dev, "DOE failed: %d", rc);
+		return rc;
+	}
+	if (rc < sizeof(response))
+		return -EIO;
+
+	*length = le32_to_cpu(response[1]);
+	dev_dbg(dev, "CDAT length %zu\n", *length);
+
+	return 0;
 }
 
-
-static asmlinkage int (*real_cxl_cdat_read_table)(struct device *dev,
+static int cxl_cdat_read_table(struct device *dev,
 			       struct pci_doe_mb *cdat_doe,
-			       void *cdat_table, size_t *cdat_length);
+			       void *cdat_table, size_t *cdat_length)
+{
+	size_t length = *cdat_length + sizeof(__le32);
+	__le32 *data = cdat_table;
+	int entry_handle = 0;
+	__le32 saved_dw = 0;
 
-static asmlinkage int fh_cxl_cdat_read_table(struct device *dev,
-			       struct pci_doe_mb *cdat_doe,
-			       void *cdat_table, size_t *cdat_length){
-	return real_cxl_cdat_read_table(dev, cdat_doe, cdat_table, cdat_length);
+	do {
+		__le32 request = CDAT_DOE_REQ(entry_handle);
+		struct cdat_entry_header *entry;
+		size_t entry_dw;
+		int rc;
+
+		rc = pci_doe(cdat_doe, PCI_DVSEC_VENDOR_ID_CXL,
+			     CXL_DOE_PROTOCOL_TABLE_ACCESS,
+			     &request, sizeof(request),
+			     data, length);
+		if (rc < 0) {
+			dev_err(dev, "DOE failed: %d", rc);
+			return rc;
+		}
+
+		/* 1 DW Table Access Response Header + CDAT entry */
+		entry = (struct cdat_entry_header *)(data + 1);
+		if ((entry_handle == 0 &&
+		     rc != sizeof(__le32) + sizeof(struct cdat_header)) ||
+		    (entry_handle > 0 &&
+		     (rc < sizeof(__le32) + sizeof(*entry) ||
+		      rc != sizeof(__le32) + le16_to_cpu(entry->length))))
+			return -EIO;
+
+		/* Get the CXL table access header entry handle */
+		entry_handle = FIELD_GET(CXL_DOE_TABLE_ACCESS_ENTRY_HANDLE,
+					 le32_to_cpu(data[0]));
+		entry_dw = rc / sizeof(__le32);
+		/* Skip Header */
+		entry_dw -= 1;
+		/*
+		 * Table Access Response Header overwrote the last DW of
+		 * previous entry, so restore that DW
+		 */
+		*data = saved_dw;
+		length -= entry_dw * sizeof(__le32);
+		data += entry_dw;
+		saved_dw = *data;
+	} while (entry_handle != CXL_DOE_TABLE_ACCESS_LAST_ENTRY);
+
+	/* Length in CDAT header may exceed concatenation of CDAT entries */
+	*cdat_length -= length - sizeof(__le32);
+
+	return 0;
 }
+
 
 static asmlinkage void (*real_read_cdat_data)(struct cxl_port *port);
 
@@ -332,7 +401,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 
 	port->cdat_available = true;
 
-	if (fh_cxl_cdat_get_length(dev, cdat_doe, &cdat_length)) {
+	if (cxl_cdat_get_length(dev, cdat_doe, &cdat_length)) {
 		dev_dbg(dev, "No CDAT length\n");
 		return;
 	}
@@ -342,7 +411,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 	if (!cdat_table)
 		return;
 
-	rc = fh_cxl_cdat_read_table(dev, cdat_doe, cdat_table, &cdat_length);
+	rc = cxl_cdat_read_table(dev, cdat_doe, cdat_table, &cdat_length);
 	if (rc) {
 		/* Don't leave table data allocated on error */
 		devm_kfree(dev, cdat_table);
@@ -365,8 +434,6 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 
 static struct ftrace_hook demo_hooks[] = {
 	HOOK("read_cdat_data",  fh_read_cdat_data,  &real_read_cdat_data),
-	HOOK("cxl_cdat_get_length",  fh_cxl_cdat_get_length,  &real_cxl_cdat_get_length),
-	HOOK("cxl_cdat_read_table",  fh_cxl_cdat_read_table,  &real_cxl_cdat_read_table),
 };
 
 static int fh_init(void)

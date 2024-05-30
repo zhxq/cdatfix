@@ -1,3 +1,4 @@
+CONFIG_MODULE_SIG=n
 KERNEL_PATH ?= /lib/modules/$(shell uname -r)/build
 KERNEL_SOURCE_PATH = /home/eeum/linux-6.6.8
 ccflags-y := -std=gnu99  -Wno-declaration-after-statement -I$(KERNEL_SOURCE_PATH)/drivers/cxl -I$(KERNEL_SOURCE_PATH)/drivers/cxl/core
