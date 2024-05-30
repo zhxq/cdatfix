@@ -56,7 +56,7 @@ struct process_name {
 };
 
 // Uncomment the following line to enable logging to dmesg.
-// #define DEBUG_MODULE
+#define DEBUG_MODULE
 
 #ifdef DEBUG_MODULE
 #define printdbg(fmt, ...) \
@@ -439,7 +439,7 @@ static struct ftrace_hook demo_hooks[] = {
 static int fh_init(void)
 {
 	int err;
-
+	
 	err = fh_install_hooks(demo_hooks, ARRAY_SIZE(demo_hooks));
 	if (err)
 		return err;
