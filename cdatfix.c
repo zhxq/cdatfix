@@ -312,7 +312,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 	// printwmodname("blk_account_io_start() after\n\n");
 
 
-		struct cxl_memdev *cxlmd = to_cxl_memdev(port->uport_dev);
+	struct cxl_memdev *cxlmd = to_cxl_memdev(port->uport_dev);
 	struct device *host = cxlmd->dev.parent;
 	struct device *dev = &port->dev;
 	struct pci_doe_mb *cdat_doe;
@@ -346,7 +346,7 @@ static asmlinkage void fh_read_cdat_data(struct cxl_port *port)
 	if (rc) {
 		/* Don't leave table data allocated on error */
 		devm_kfree(dev, cdat_table);
-		dev_err(dev, "CDAT data read error\n");
+		dev_err(dev, "CDAT data read error - from the kernel module\n");
 		return;
 	}
 
