@@ -320,13 +320,13 @@ static int cxl_cdat_read_table(struct device *dev,
 	__le32 *data = cdat_table;
 	int entry_handle = 0;
 	__le32 saved_dw = 0;
-
+	printwmodname("cxl_cdat_read_table() 1\n\n");
 	do {
 		__le32 request = CDAT_DOE_REQ(entry_handle);
 		struct cdat_entry_header *entry;
 		size_t entry_dw;
 		int rc;
-
+		printwmodname("cxl_cdat_read_table() 2\n\n");
 		rc = pci_doe(cdat_doe, PCI_DVSEC_VENDOR_ID_CXL,
 			     CXL_DOE_PROTOCOL_TABLE_ACCESS,
 			     &request, sizeof(request),
@@ -335,16 +335,20 @@ static int cxl_cdat_read_table(struct device *dev,
 			dev_err(dev, "DOE failed: %d", rc);
 			return rc;
 		}
-
+		printwmodname("cxl_cdat_read_table() 3: checking values\n\n");
 		/* 1 DW Table Access Response Header + CDAT entry */
 		entry = (struct cdat_entry_header *)(data + 1);
+		printwmodname("entry_handle: %d\n", entry_handle);
+		printwmodname("rc: %d\n", rc);
+		printwmodname("sizeof(__le32): %lu\n", sizeof(__le32));
+		printwmodname("sizeof(struct cdat_header): %lu\n", sizeof(struct cdat_header));
 		if ((entry_handle == 0 &&
 		     rc != sizeof(__le32) + sizeof(struct cdat_header)) ||
 		    (entry_handle > 0 &&
 		     (rc < sizeof(__le32) + sizeof(*entry) ||
 		      rc != sizeof(__le32) + le16_to_cpu(entry->length))))
 			return -EIO;
-
+		printwmodname("cxl_cdat_read_table() 4\n\n");
 		/* Get the CXL table access header entry handle */
 		entry_handle = FIELD_GET(CXL_DOE_TABLE_ACCESS_ENTRY_HANDLE,
 					 le32_to_cpu(data[0]));
@@ -359,6 +363,7 @@ static int cxl_cdat_read_table(struct device *dev,
 		length -= entry_dw * sizeof(__le32);
 		data += entry_dw;
 		saved_dw = *data;
+		printwmodname("cxl_cdat_read_table() 5\n\n");
 	} while (entry_handle != CXL_DOE_TABLE_ACCESS_LAST_ENTRY);
 
 	/* Length in CDAT header may exceed concatenation of CDAT entries */
