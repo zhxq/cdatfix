@@ -321,7 +321,7 @@ static int cxl_cdat_read_table(struct device *dev,
 	int entry_handle = 0;
 	__le32 saved_dw = 0;
 	printwmodname("cxl_cdat_read_table() expected length: %lu\n\n", length);
-	printwmodname("of which, *cdat_length=%lu, sizeof(__le32)=\n\n", *cdat_length, sizeof(__le32));
+	printwmodname("of which, *cdat_length=%lu, sizeof(__le32)=%lu\n\n", *cdat_length, sizeof(__le32));
 	do {
 		__le32 request = CDAT_DOE_REQ(entry_handle);
 		struct cdat_entry_header *entry;
