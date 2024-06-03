@@ -320,9 +320,9 @@ static int cxl_cdat_read_table(struct device *dev,
 	__le32 *data = cdat_table;
 	int entry_handle = 0;
 	__le32 saved_dw = 0;
-	printwmodname("cxl_cdat_read_table() expected length: %lu\n\n", length);
-	printwmodname("of which, *cdat_length=%lu, sizeof(__le32)=%lu\n\n", *cdat_length, sizeof(__le32));
 	do {
+		printwmodname("cxl_cdat_read_table() expected length: %lu\n\n", length);
+		printwmodname("of which, *cdat_length=%lu, sizeof(__le32)=%lu\n\n", *cdat_length, sizeof(__le32));
 		__le32 request = CDAT_DOE_REQ(entry_handle);
 		struct cdat_entry_header *entry;
 		size_t entry_dw;
@@ -342,7 +342,12 @@ static int cxl_cdat_read_table(struct device *dev,
 		printwmodname("entry_handle: %d\n", entry_handle);
 		printwmodname("rc: %d\n", rc);
 		printwmodname("sizeof(__le32): %lu\n", sizeof(__le32));
-		printwmodname("sizeof(struct cdat_header): %lu\n", sizeof(struct cdat_header));
+		if (entry_handle == 0){
+			printwmodname("sizeof(struct cdat_header): %lu\n", sizeof(struct cdat_header));
+		}else{
+			printwmodname("le16_to_cpu(entry->length): %d\n", le16_to_cpu(entry->length));
+		}
+		
 		if ((entry_handle == 0 &&
 		     rc != sizeof(__le32) + sizeof(struct cdat_header)) ||
 		    (entry_handle > 0 &&
